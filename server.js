@@ -6,6 +6,12 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 app.use(express.json());
+const path = require('path');
+
+// index.html dosyasını ana sayfada göster
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // MongoDB Bağlantısı
 mongoose.connect(process.env.MONGO_URI)
