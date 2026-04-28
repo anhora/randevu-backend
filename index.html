@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem | Randevu Yönetimi</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --black: #0a0a0a; --gray: #1a1a1a; --border: #333; --accent: #888; --text: #ddd; }
+        body { background: var(--black); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; }
+        
+        .nav { width: 100%; border-bottom: 1px solid var(--border); padding: 20px; text-align: center; background: var(--gray); }
+        .nav button { background: none; border: 1px solid var(--border); color: var(--accent); padding: 8px 15px; cursor: pointer; margin: 0 5px; }
+        .nav button.active { border-color: #eee; color: #eee; }
+
+        .container { max-width: 900px; width: 95%; margin-top: 30px; display: none; }
+        .container.active { display: block; }
+
+        /* Estetik Kartlar */
+        .card { background: var(--gray); border: 1px solid var(--border); padding: 30px; border-radius: 4px; margin-bottom: 20px; }
+        h2 { text-transform: uppercase; letter-spacing: 4px; font-weight: 300; margin-bottom: 25px; border-left: 3px solid #eee; padding-left: 15px; }
+
+        /* Saat Seçimi Izgarası */
+        .time-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-top: 20px; }
+        .time-slot { border: 1px solid var(--border); padding: 10px; text-align: center; cursor: pointer; transition: 0.3s; font-size: 0.8rem; }
+        .time-slot:hover { background: #eee; color: #000; }
+        .time-slot.taken { background: #333; color: #555; cursor: not-allowed; border-color: transparent; }
+        .time-slot.selected { background: #eee; color: #000; }
+
+        input, textarea { width: 100%; background: var(--black); border: 1px solid var(--border); padding: 12px; color: #fff; margin-bottom: 15px; border-radius: 2px; }
+        .btn-main { width: 100%; padding: 15px; background: #eee; border: none; font-weight: 600; cursor: pointer; letter-spacing: 2px; }
+
+        /* Admin Tablo */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { text-align: left; color: var(--accent); font-size: 0.7rem; text-transform: uppercase; padding: 10px; border-bottom: 1px solid var(--border); }
+        td { padding: 15px 10px; border-bottom: 1px solid #222; font-size: 0.9rem; }
+        .delete-btn { color: #ff4444; cursor: pointer; font-size: 0.7rem; border: 1px solid #442222; padding: 4px 8px; }
+    </style>
+</head>
+<body>
+
+<div class="nav">
+    <button onclick="showPage('musteri')" id="btn-musteri" class="active">MÜŞTERİ PANELİ</button>
+    <button onclick="showPage('admin')" id="btn-admin">ADMİN GİRİŞİ</button>
+</div>
+
+<div id="musteri" class="container active">
+    <div class="card">
+        <h2>Randevu Al</h2>
+        <input type="text" id="mIsim" placeholder="ADINIZ SOYADINIZ">
+        <input type="date" id="mTarih" onchange="checkAvailability()">
+        
+        <p style="font-size: 0.7rem; color: var(--accent); margin-top: 20px;">MÜSAİT SAATLER:</p>
+        <div id="timeSlots" class="time-grid">
+            </div>
+        
+        <button class="btn-main" style="margin-top: 30px;" onclick="randevuAl()">RANDEVUYU ONAYLA</button>
+    </div>
+</div>
+
+<div id="admin" class="container">
+    <div class="card" id="adminAuth">
+        <h2>Güvenlik</h2>
+        <input type="password" id="adminPass" placeholder="ADMİN ŞİFRESİ">
+        <button class="btn-main" onclick="adminLogin()">GİRİŞ YAP</button>
+    </div>
+    
+    <div id="adminContent" style="display:none;">
+        <div class="card">
+            <h2>Randevu Yönetimi</h2>
+            <table id="adminTable">
+                <thead>
+                    <tr>
+                        <th>MÜŞTERİ</th>
+                        <th>TARİH / SAAT</th>
+                        <th>İŞLEM</th>
+                    </tr>
+                </thead>
+                <tbody id="adminBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_URL = "https://randevu-backend-851n.onrender.com";
+    const calismaSaatleri = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00"];
+    let secilenSaat = null;
+
+    function showPage(page) {
+        document.querySelectorAll('.container').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+        document.getElementById(page).classList.add('active');
+        document.getElementById('btn-' + page).classList.add('active');
+    }
+
+    async function checkAvailability() {
+        const tarih = document.getElementById('mTarih').value;
+        const res = await fetch(`${API_URL}/randevular`);
+        const randevular = await res.json();
+        
+        const doluSaatler = randevular.filter(r => r.tarih === tarih).map(r => r.saat);
+        
+        const grid = document.getElementById('timeSlots');
+        grid.innerHTML = "";
+        
+        calismaSaatleri.forEach(saat => {
+            const isTaken = doluSaatler.includes(saat);
+            const div = document.createElement('div');
+            div.className = `time-slot ${isTaken ? 'taken' : ''}`;
+            div.innerText = saat;
+            if(!isTaken) {
+                div.onclick = () => {
+                    document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+                    div.classList.add('selected');
+                    secilenSaat = saat;
+                };
+            }
+            grid.appendChild(div);
+        });
+    }
+
+    async function randevuAl() {
+        const isim = document.getElementById('mIsim').value;
+        const tarih = document.getElementById('mTarih').value;
+        if(!isim || !tarih || !secilenSaat) return alert("Lütfen tüm alanları doldurun.");
+
+        await fetch(`${API_URL}/randevu-al`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ isim, tarih, saat: secilenSaat })
+        });
+        alert("Randevunuz başarıyla alındı!");
+        checkAvailability();
+    }
+
+    function adminLogin() {
+        if(document.getElementById('adminPass').value === "1234") { // Şifreyi buradan değiştirebilirsin
+            document.getElementById('adminAuth').style.display = 'none';
+            document.getElementById('adminContent').style.display = 'block';
+            fetchAdminData();
+        }
+    }
+
+    async function fetchAdminData() {
+        const res = await fetch(`${API_URL}/randevular`);
+        const data = await res.json();
+        const body = document.getElementById('adminBody');
+        body.innerHTML = "";
+        data.reverse().forEach(r => {
+            body.innerHTML += `
+                <tr>
+                    <td>${r.isim}</td>
+                    <td>${r.tarih} | ${r.saat}</td>
+                    <td><span class="delete-btn" onclick="sil('${r._id}')">İPTAL ET</span></td>
+                </tr>
+            `;
+        });
+    }
+</script>
+</body>
+</html>
